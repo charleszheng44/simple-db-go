@@ -21,8 +21,10 @@ const (
 	Where
 	LeftParen
 	RightParen
+	SingleQuote
 	Comma
 	Equal
+	Star
 )
 
 const Invalid = KeyWord(-1)
@@ -46,13 +48,17 @@ func (kw KeyWord) String() string {
 	case Where:
 		return "where"
 	case LeftParen:
-		return "leftparen"
+		return "("
 	case RightParen:
-		return "rightparen"
+		return ")"
+	case SingleQuote:
+		return "'"
 	case Comma:
-		return "comma"
+		return ","
 	case Equal:
-		return "equal"
+		return "="
+	case Star:
+		return "*"
 	}
 	return "invalid"
 }
@@ -62,18 +68,20 @@ type empty struct{}
 var null = struct{}{}
 
 var keyWords map[string]empty = map[string]empty{
-	Create.String():     null,
-	Select.String():     null,
-	Insert.String():     null,
-	Delete.String():     null,
-	Into.String():       null,
-	From.String():       null,
-	Table.String():      null,
-	Where.String():      null,
-	LeftParen.String():  null,
-	RightParen.String(): null,
-	Comma.String():      null,
-	Equal.String():      null,
+	Create.String():      null,
+	Select.String():      null,
+	Insert.String():      null,
+	Delete.String():      null,
+	Into.String():        null,
+	From.String():        null,
+	Table.String():       null,
+	Where.String():       null,
+	LeftParen.String():   null,
+	RightParen.String():  null,
+	SingleQuote.String(): null,
+	Comma.String():       null,
+	Equal.String():       null,
+	Star.String():        null,
 }
 
 func StringToKeyWord(str string) (KeyWord, error) {
@@ -94,14 +102,18 @@ func StringToKeyWord(str string) (KeyWord, error) {
 		return Table, nil
 	case "where":
 		return Where, nil
-	case "leftParen":
+	case "(":
 		return LeftParen, nil
-	case "rightParen":
+	case ")":
 		return RightParen, nil
-	case "comma":
+	case "'":
+		return SingleQuote, nil
+	case ",":
 		return Comma, nil
-	case "equal":
+	case "=":
 		return Equal, nil
+	case "*":
+		return Star, nil
 	}
 	return Invalid, errors.New("unknown keywrds")
 }
@@ -110,6 +122,7 @@ type TokenType int
 
 const (
 	KeyWordToken TokenType = iota
+	UnquoteStringToken
 	IntegerToken
 	FloatToken
 	BoolToken
@@ -129,6 +142,8 @@ func (tk Token) String() string {
 	switch tk.Type {
 	case KeyWordToken:
 		return tk.KeyWordVal.String()
+	case UnquoteStringToken:
+		return tk.StringVal
 	case IntegerToken:
 		return strconv.FormatInt(int64(tk.IntegerVal), 10)
 	case FloatToken:
@@ -136,24 +151,26 @@ func (tk Token) String() string {
 	case BoolToken:
 		return strconv.FormatBool(tk.BoolVal)
 	case StringToken:
-		return tk.StringVal
+		return "'" + tk.StringVal + "'"
 	}
 	return "invalid"
 }
 
-func isKeyWord(word string) (KeyWord, bool) {
-	var kw KeyWord
+func isKeyWord(word string) (*Token, bool) {
 	_, exist := keyWords[strings.ToLower(word)]
 	if !exist {
-		return kw, false
+		return nil, false
 	}
 	kw, err := StringToKeyWord(string(word))
 	if err != nil {
 		// TODO(charleszheng44): print the error message
-		return kw, false
+		return nil, false
 	}
 
-	return kw, true
+	return &Token{
+		Type:       KeyWordToken,
+		KeyWordVal: kw,
+	}, true
 }
 
 func isNumber(word string) (*Token, bool) {
@@ -209,7 +226,23 @@ func isBool(word string) (*Token, bool) {
 	return nil, false
 }
 
+// isString checks if the input `word` is a quoted string, i.e., 'xxxx'.
+func isString(word string) (*Token, bool) {
+	rs := []rune(word)
+	if rs[0] == '\'' && rs[len(rs)-1] == '\'' {
+		return &Token{
+			Type:      StringToken,
+			StringVal: string(rs[1 : len(rs)-1]),
+		}, true
+	}
+	return nil, false
+}
+
 func tokenize(word string) (*Token, error) {
+	if tk, ok := isKeyWord(word); ok {
+		return tk, nil
+	}
+
 	if tk, ok := isBool(word); ok {
 		return tk, nil
 	}
@@ -218,16 +251,21 @@ func tokenize(word string) (*Token, error) {
 		return tk, nil
 	}
 
+	if tk, ok := isString(word); ok {
+		return tk, nil
+	}
+
 	return &Token{
-		Type:      StringToken,
+		Type:      UnquoteStringToken,
 		StringVal: word,
 	}, nil
 }
 
-func Tokenize(inp string) ([]*Token, error) {
+func Tokenize(inp []rune) ([]*Token, error) {
 	var tks []*Token
 	// process the keywords first
 	var currWord []rune
+	var isStr bool
 	for _, rn := range inp {
 		// ignore the space
 		if unicode.IsSpace(rn) {
@@ -241,7 +279,7 @@ func Tokenize(inp string) ([]*Token, error) {
 			continue
 		}
 
-		if rn == '(' {
+		if rn == '(' && !isStr {
 			tk, err := tokenize(string(currWord))
 			if err != nil {
 				return tks, err
@@ -256,7 +294,7 @@ func Tokenize(inp string) ([]*Token, error) {
 			continue
 		}
 
-		if rn == ')' {
+		if rn == ')' && !isStr {
 			tk, err := tokenize(string(currWord))
 			if err != nil {
 				return tks, err
@@ -271,7 +309,7 @@ func Tokenize(inp string) ([]*Token, error) {
 			continue
 		}
 
-		if rn == ',' {
+		if rn == ',' && !isStr {
 			tk, err := tokenize(string(currWord))
 			if err != nil {
 				return tks, err
@@ -284,6 +322,11 @@ func Tokenize(inp string) ([]*Token, error) {
 				KeyWordVal: Comma,
 			})
 			continue
+		}
+
+		if rn == '\'' {
+			// content within two single quotes is a string
+			isStr = !isStr
 		}
 
 		currWord = append(currWord, rn)
