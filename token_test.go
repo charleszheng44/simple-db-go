@@ -32,6 +32,13 @@ var (
 	}
 )
 
+func unQuoteStrTk(inp string) *Token {
+	return &Token{
+		Type:      UnquoteStringToken,
+		StringVal: inp,
+	}
+}
+
 func stringTk(inp string) *Token {
 	return &Token{
 		Type:      StringToken,
@@ -59,7 +66,7 @@ func TestTokenize(t *testing.T) {
 				SelectTk,
 				StarTk,
 				FromTk,
-				stringTk("test"),
+				unQuoteStrTk("test"),
 			},
 		},
 		{
@@ -69,11 +76,25 @@ func TestTokenize(t *testing.T) {
 				SelectTk,
 				StarTk,
 				FromTk,
-				stringTk("test"),
+				unQuoteStrTk("test"),
 				WhereTk,
-				stringTk("id"),
+				unQuoteStrTk("id"),
 				EqualTk,
 				intTk(1),
+			},
+		},
+		{
+			"Select Statment with string and unquoteStr",
+			"select * from test where name = 'test-name'",
+			[]*Token{
+				SelectTk,
+				StarTk,
+				FromTk,
+				unQuoteStrTk("test"),
+				WhereTk,
+				unQuoteStrTk("name"),
+				EqualTk,
+				stringTk("test-name"),
 			},
 		},
 	}
