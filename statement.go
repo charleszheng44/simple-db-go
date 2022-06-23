@@ -1,44 +1,288 @@
 package main
 
-type Statement interface {
-	Interpret() (string, error)
-}
+import (
+	"reflect"
 
-var (
-	_ = Statement(&CreateStatement{})
-	_ = Statement(&SelectStatement{})
-	_ = Statement(&InsertStatement{})
-	_ = Statement(&DeleteStatement{})
+	"github.com/pkg/errors"
 )
 
 type CreateStatement struct {
-}
-
-func (cs *CreateStatement) Interpret() (string, error) {
-	return "", nil
+	table      string
+	schema     map[string]reflect.Kind
+	primaryKey string
 }
 
 type SelectStatement struct {
+	table  string
+	fields []string
+	where  *WhereClause
 }
 
-func (ss *SelectStatement) Interpret() (string, error) {
-	return "", nil
+type WhereClause struct {
+	field    string
+	operator *Operator
+	value    any
 }
 
-type InsertStatement struct {
-}
+type Operator int
 
-func (is *InsertStatement) Interpret() (string, error) {
-	return "", nil
-}
+const equal Operator = iota
+
+type InsertStatement struct{}
 
 type DeleteStatement struct {
+	table string
 }
 
-func (ds *DeleteStatement) Interpret() (string, error) {
-	return "", nil
+func parseSelectStatement(tokens []*Token) (*SelectStatement, error) {
+	// skip the first token, i.e., "Select"
+	i := 1
+	fields := []string{}
+	for ; !cmpTks(*tokens[i], TokenFrom); i++ {
+		if i%2 != 0 {
+			// must be a comma
+			if !cmpTks(*tokens[i], TokenComma) {
+				return nil, errors.New("the desired field must follow a comma")
+			}
+			continue
+		}
+		if !isUnquoteStringToken(tokens[i]) {
+			return nil, errors.Errorf("invalid token (%s) before FROM",
+				tokens[i].String())
+		}
+		fields = append(fields, tokens[i].String())
+	}
+	// check the previous token
+	if !isUnquoteStringToken(tokens[i-1]) {
+		return nil, errors.Errorf("FROM must follow a unquote string token")
+	}
+	i++
+	if !isUnquoteStringToken(tokens[i]) {
+		return nil, errors.Errorf("FROM must be follow by a unquote string token")
+	}
+	table := tokens[i].String()
+	i++
+	where := &WhereClause{}
+	if i == len(tokens) {
+		goto RETURN
+	}
+
+	// parse the where clause if exist
+	if !cmpTks(*tokens[i], TokenWhere) {
+		// TODO(charleszheng44) more detailed error message
+		return nil, errors.New("invalid token")
+	}
+	i++
+	if i == len(tokens) {
+		return nil, errors.New("incomplete statement")
+	}
+
+	if !isUnquoteStringToken(tokens[i]) {
+		return nil, errors.New("invalid token")
+	}
+	where.field = tokens[i].StringVal
+	i++
+	if i == len(tokens) {
+		return nil, errors.New("incomplete statement")
+	}
+
+	if !cmpTks(*tokens[i], TokenEqual) {
+		return nil, errors.New("invalid token")
+	}
+	i++
+	if i == len(tokens) {
+		return nil, errors.New("incomplete statement")
+	}
+
+	switch tokens[i].Type {
+	case StringToken:
+		where.value = tokens[i].StringVal
+	case IntegerToken:
+		where.value = tokens[i].IntegerVal
+	case FloatToken:
+		where.value = tokens[i].FloatVal
+	case BoolToken:
+		where.value = tokens[i].BoolVal
+	default:
+		return nil, errors.New("invalid token")
+	}
+
+RETURN:
+	return &SelectStatement{
+		table:  table,
+		fields: fields,
+		where:  where,
+	}, nil
 }
 
-func parse(tokens []*Token) (Statement, error) {
-	return nil, nil
+func parseField(
+	tokens []*Token,
+	schema map[string]reflect.Kind,
+	i *int) (string, error) {
+	if *i >= len(tokens) {
+		return "", errors.New("incomplete statement")
+	}
+
+	// skip the comma
+	if cmpTks(*tokens[*i], TokenComma) {
+		*i++
+	}
+
+	if tokens[*i].Type != UnquoteStringToken {
+		return "", errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[*i].Type, UnquoteStringToken)
+	}
+	colName := tokens[*i].StringVal
+	*i++
+
+	if *i >= len(tokens) {
+		return "", errors.New("incomplete statement")
+	}
+	if tokens[*i].Type != UnquoteStringToken {
+		return "", errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[*i].Type, UnquoteStringToken)
+	}
+	dataTypeStr := tokens[*i].StringVal
+
+	kind, err := stringToKind(dataTypeStr)
+	if err != nil {
+		return "", err
+	}
+
+	schema[colName] = kind
+	*i++
+
+	if *i >= len(tokens) || cmpTks(*tokens[*i], TokenComma) {
+		return "", nil
+	}
+
+	if !cmpTks(*tokens[*i], TokenPrimary) {
+		return "", errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[*i], TokenPrimary)
+	}
+	*i++
+	if *i >= len(tokens) {
+		return "", errors.New("invalid create statement")
+	}
+	if !cmpTks(*tokens[*i], TokenKey) {
+		return "", errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[*i], TokenKey)
+	}
+	*i++
+
+	return colName, nil
+}
+
+func genSchema(tokens []*Token) (map[string]reflect.Kind, string, error) {
+	var (
+		schema = make(map[string]reflect.Kind)
+		pk     string
+	)
+
+	// parse the token and generate the schema
+	for i := 0; i < len(tokens); {
+		tpk, err := parseField(tokens, schema, &i)
+		if err != nil {
+			return nil, "",
+				errors.Errorf("failed to parse the field definition: %v", err)
+		}
+
+		if len(pk) == 0 {
+			pk = tpk
+			continue
+		}
+
+		// if primary key has been set
+		if len(tpk) != 0 {
+			return nil, "",
+				errors.Errorf("duplicate primary key: %s and %s", pk, tpk)
+		}
+	}
+
+	if pk == "" {
+		return nil, "", errors.New("primary key is not set")
+	}
+
+	return schema, pk, nil
+}
+
+func parseCreateStatement(tokens []*Token) (*CreateStatement, error) {
+	// skip the first token, i.e., "Create"
+	i := 1
+	if i == len(tokens) {
+		return nil, errors.New("incomplete create statement")
+	}
+	if !cmpTks(*tokens[i], TokenTable) {
+		return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[i], TokenTable)
+	}
+	i++
+
+	// get the table name
+	if i == len(tokens) {
+		return nil, errors.New("incomplete create statement")
+	}
+	if tokens[i].Type != UnquoteStringToken {
+		return nil, errors.Errorf("invalid token type: got(%s), expect(%s)",
+			tokens[i].Type, UnquoteStringToken)
+	}
+	table := tokens[i].StringVal
+	i++
+
+	// parse and get the schema
+	if i == len(tokens) {
+		return nil, errors.New("incomplete create statement")
+	}
+	if !cmpTks(*tokens[i], TokenLeftParen) {
+		return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[i], TokenLeftParen)
+	}
+	i++
+	start := i
+
+	if i == len(tokens) {
+		return nil, errors.New("incomplete create statement")
+	}
+	for !cmpTks(*tokens[i], TokenRightParen) && i != len(tokens) {
+		i++
+	}
+	if i == len(tokens) {
+		return nil, errors.New("incomplete create statement")
+	}
+	end := i
+
+	schema, primaryKey, err := genSchema(tokens[start:end])
+	if err != nil {
+		return nil, errors.Errorf("failed to get schema %v", err)
+	}
+
+	return &CreateStatement{
+		table:      table,
+		schema:     schema,
+		primaryKey: primaryKey,
+	}, nil
+}
+
+func parse(tokens []*Token) (any, error) {
+	if len(tokens) == 0 {
+		return nil, errors.New("cannot parse an empty token slice")
+	}
+
+	if tokens[0].Type != KeyWordToken {
+		return nil, errors.New("invalid input format: the first token is not a keyword")
+	}
+
+	switch tokens[0].KeyWordVal {
+	case Select:
+		return parseSelectStatement(tokens)
+	case Create:
+		return parseCreateStatement(tokens)
+	case Insert:
+		panic("NOT IMPLEMENT YET")
+	case Delete:
+		panic("NOT IMPLEMENT YET")
+	default:
+		return nil, errors.Errorf("invalid input format: unsupported keyword %s",
+			tokens[0].KeyWordVal.String())
+	}
 }
