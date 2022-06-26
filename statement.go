@@ -28,7 +28,10 @@ type Operator int
 
 const equal Operator = iota
 
-type InsertStatement struct{}
+type InsertStatement struct {
+	table  string
+	values map[string]any
+}
 
 type DeleteStatement struct {
 	table string
@@ -223,8 +226,8 @@ func parseCreateStatement(tokens []*Token) (*CreateStatement, error) {
 		return nil, errors.New("incomplete create statement")
 	}
 	if tokens[i].Type != UnquoteStringToken {
-		return nil, errors.Errorf("invalid token type: got(%s), expect(%s)",
-			tokens[i].Type, UnquoteStringToken)
+		return nil, errors.Errorf("invalid token type: "+
+			"got(%s), expect(%s)", tokens[i].Type, UnquoteStringToken)
 	}
 	table := tokens[i].StringVal
 	i++
@@ -260,6 +263,140 @@ func parseCreateStatement(tokens []*Token) (*CreateStatement, error) {
 		table:      table,
 		schema:     schema,
 		primaryKey: primaryKey,
+	}, nil
+}
+
+func getColumnNames(tokens []*Token, i *int) ([]string, error) {
+	*i++
+	ret := []string{}
+	isColumnName := true
+	for ; !cmpTks(*tokens[*i], TokenRightParen); *i++ {
+		if isColumnName {
+			if !isUnquoteStringToken(tokens[*i]) {
+				return nil, errors.Errorf("invalid token (%s)",
+					tokens[*i].String())
+			}
+			ret = append(ret, tokens[*i].StringVal)
+		} else {
+			// check if the token is a comma
+			if !cmpTks(*tokens[*i], TokenComma) {
+				return nil, errors.Errorf("invalid token (%s)"+
+					" expect(%s)",
+					tokens[*i].String(),
+					TokenComma.String())
+			}
+		}
+		isColumnName = !isColumnName
+	}
+	return ret, nil
+}
+
+func getValues(tokens []*Token, i *int) ([]any, error) {
+	*i++
+	ret := []any{}
+	isValue := true
+	for ; !cmpTks(*tokens[*i], TokenRightParen); *i++ {
+		if isValue {
+			if !isUnquoteStringToken(tokens[*i]) {
+				return nil, errors.Errorf("invalid token (%s)",
+					tokens[*i].String())
+			}
+			switch tokens[*i].Type {
+			case IntegerToken:
+				ret = append(ret, tokens[*i].IntegerVal)
+			case FloatToken:
+				ret = append(ret, tokens[*i].FloatVal)
+			case BoolToken:
+				ret = append(ret, tokens[*i].BoolVal)
+			case StringToken:
+				ret = append(ret, tokens[*i].StringVal)
+			default:
+				return nil, errors.Errorf("invalid token type(%s)",
+					tokens[*i].Type.String())
+			}
+		} else {
+			// check if the token is a comma
+			if !cmpTks(*tokens[*i], TokenComma) {
+				return nil, errors.Errorf("invalid token (%s)"+
+					" expect(%s)",
+					tokens[*i].String(),
+					TokenComma.String())
+			}
+		}
+		isValue = !isValue
+	}
+	return ret, nil
+}
+
+func parseInsertStatement(tokens []*Token) (*InsertStatement, error) {
+	// skip the first token, insert
+	i := 1
+	if i == len(tokens) {
+		return nil, errors.New("incomplete insert statement")
+	}
+	if !cmpTks(*tokens[i], TokenInto) {
+		return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[i], TokenInto)
+	}
+	i++
+
+	// get column names if specified
+	cns := []string{}
+	if i == len(tokens) {
+		return nil, errors.New("incomplete insert statement")
+	}
+
+	if cmpTks(*tokens[i], TokenLeftParen) {
+		var err error
+		cns, err = getColumnNames(tokens, &i)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get column names")
+		}
+	}
+	i++
+
+	// get the table name
+	if i == len(tokens) {
+		return nil, errors.New("incomplete insert statement")
+	}
+	if tokens[i].Type != UnquoteStringToken {
+		return nil, errors.Errorf("invalid token type: "+
+			"got(%s), expect(%s)", tokens[i].Type, UnquoteStringToken)
+	}
+	table := tokens[i].StringVal
+	i++
+
+	// check the VALUES keyword
+	if i == len(tokens) {
+		return nil, errors.New("incomplete insert statement")
+	}
+	if !cmpTks(*tokens[i], TokenValues) {
+		return nil, errors.Errorf("invalid token: "+
+			"got(%s), expect(%s)", tokens[i], TokenInto)
+	}
+	i++
+
+	// get the values
+	if i == len(tokens) {
+		return nil, errors.New("incomplete insert statement")
+	}
+	vs, err := getValues(tokens, &i)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get values")
+	}
+
+	if len(cns) != len(vs) {
+		return nil, errors.Errorf("number columns(%d) "+
+			"not equal to number values(%d)", len(cns), len(vs))
+	}
+
+	values := make(map[string]any)
+	for i, c := range cns {
+		values[c] = vs[i]
+	}
+	return &InsertStatement{
+		table:  table,
+		values: values,
 	}, nil
 }
 

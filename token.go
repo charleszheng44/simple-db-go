@@ -27,6 +27,7 @@ const (
 	Comma
 	Equal
 	Star
+	Values
 )
 
 var (
@@ -73,6 +74,16 @@ var (
 	TokenRightParen = Token{
 		Type:       KeyWordToken,
 		KeyWordVal: RightParen,
+	}
+
+	TokenInto = Token{
+		Type:       KeyWordToken,
+		KeyWordVal: Into,
+	}
+
+	TokenValues = Token{
+		Type:       KeyWordToken,
+		KeyWordVal: Values,
 	}
 )
 
@@ -139,6 +150,8 @@ func (kw KeyWord) String() string {
 		return "="
 	case Star:
 		return "*"
+	case Values:
+		return "values"
 	}
 	return "invalid"
 }
@@ -164,6 +177,7 @@ var keyWords map[string]empty = map[string]empty{
 	Comma.String():        null,
 	Equal.String():        null,
 	Star.String():         null,
+	Values.String():       null,
 }
 
 func StringToKeyWord(str string) (KeyWord, error) {
