@@ -74,7 +74,56 @@ func (db *Database) DeleteTable(ds *DeleteStatement) *Result {
 }
 
 func (db *Database) InsertInto(is *InsertStatement) *Result {
-	panic("NOT IMPLEMENT YET")
+	db.Lock()
+	defer db.Unlock()
+	t, exist := db.tables[is.table]
+	if !exist {
+		return &Result{
+			err: errors.Errorf("insert into non exist table %s",
+				is.table),
+		}
+	}
+
+	r := &Row{
+		fields: make(map[string]any),
+	}
+
+	for cn := range t.schema {
+		r.fields[cn] = nil
+	}
+
+	// primary key cannot be empty
+	pk, exist := is.values[t.primaryKey]
+	if !exist {
+		return &Result{
+			err: errors.Errorf("primary key is not given"),
+		}
+	}
+
+	for cn, v := range is.values {
+		kind, exist := t.schema[cn]
+		// column is not defined in the schema
+		if !exist {
+			return &Result{
+				err: errors.Errorf("column(%s) not exist", cn),
+			}
+		}
+		// the given value kind is not as defined
+		tk := reflect.TypeOf(v).Kind()
+		if tk != kind {
+			return &Result{
+				err: errors.Errorf("invalid column(%s) type: "+
+					"given(%s), expect(%s)", cn, tk, kind),
+			}
+		}
+
+		r.fields[cn] = v
+	}
+	// insert the row to the table
+	t.rows[pk] = r
+	return &Result{
+		message: "1 ROW INSERTED",
+	}
 }
 
 func (db *Database) SelectFrom(ss *SelectStatement) *Result {

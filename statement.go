@@ -380,6 +380,10 @@ func parseInsertStatement(tokens []*Token) (*InsertStatement, error) {
 	if i == len(tokens) {
 		return nil, errors.New("incomplete insert statement")
 	}
+	if !cmpTks(*tokens[i], TokenLeftParen) {
+		return nil, errors.Errorf("invalid token: "+
+			"got(%s), expect(%s)", tokens[i], TokenLeftParen)
+	}
 	vs, err := getValues(tokens, &i)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get values")
@@ -415,7 +419,7 @@ func parse(tokens []*Token) (any, error) {
 	case Create:
 		return parseCreateStatement(tokens)
 	case Insert:
-		panic("NOT IMPLEMENT YET")
+		return parseInsertStatement(tokens)
 	case Delete:
 		panic("NOT IMPLEMENT YET")
 	default:
