@@ -42,7 +42,7 @@ func parseSelectStatement(tokens []*Token) (*SelectStatement, error) {
 	i := 1
 	fields := []string{}
 	for ; !cmpTks(*tokens[i], TokenFrom); i++ {
-		if i%2 != 0 {
+		if i%2 == 0 {
 			// must be a comma
 			if !cmpTks(*tokens[i], TokenComma) {
 				return nil, errors.New("the desired field must follow a comma")
@@ -65,11 +65,12 @@ func parseSelectStatement(tokens []*Token) (*SelectStatement, error) {
 	}
 	table := tokens[i].String()
 	i++
-	where := &WhereClause{}
+	var where *WhereClause
 	if i == len(tokens) {
 		goto RETURN
 	}
 
+	where = &WhereClause{}
 	// parse the where clause if exist
 	if !cmpTks(*tokens[i], TokenWhere) {
 		// TODO(charleszheng44) more detailed error message
@@ -297,7 +298,7 @@ func getValues(tokens []*Token, i *int) ([]any, error) {
 	isValue := true
 	for ; !cmpTks(*tokens[*i], TokenRightParen); *i++ {
 		if isValue {
-			if !isUnquoteStringToken(tokens[*i]) {
+			if isUnquoteStringToken(tokens[*i]) {
 				return nil, errors.Errorf("invalid token (%s)",
 					tokens[*i].String())
 			}
@@ -340,6 +341,18 @@ func parseInsertStatement(tokens []*Token) (*InsertStatement, error) {
 	}
 	i++
 
+	// get the table name
+	if i == len(tokens) {
+		return nil, errors.New("incomplete insert statement")
+	}
+	if tokens[i].Type != UnquoteStringToken {
+		return nil, errors.Errorf("invalid token type: "+
+			"got(%s/'%s'), expect(%s)",
+			tokens[i].Type, tokens[i], UnquoteStringToken)
+	}
+	table := tokens[i].StringVal
+	i++
+
 	// get column names if specified
 	cns := []string{}
 	if i == len(tokens) {
@@ -355,24 +368,13 @@ func parseInsertStatement(tokens []*Token) (*InsertStatement, error) {
 	}
 	i++
 
-	// get the table name
-	if i == len(tokens) {
-		return nil, errors.New("incomplete insert statement")
-	}
-	if tokens[i].Type != UnquoteStringToken {
-		return nil, errors.Errorf("invalid token type: "+
-			"got(%s), expect(%s)", tokens[i].Type, UnquoteStringToken)
-	}
-	table := tokens[i].StringVal
-	i++
-
 	// check the VALUES keyword
 	if i == len(tokens) {
 		return nil, errors.New("incomplete insert statement")
 	}
 	if !cmpTks(*tokens[i], TokenValues) {
 		return nil, errors.Errorf("invalid token: "+
-			"got(%s), expect(%s)", tokens[i], TokenInto)
+			"got(%s), expect(%s)", tokens[i], TokenValues)
 	}
 	i++
 

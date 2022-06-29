@@ -6,6 +6,19 @@ import (
 	"os"
 )
 
+func printRows(rs []*Row, cols []string) {
+	for _, col := range cols {
+		fmt.Printf("|%s\t", col)
+	}
+	fmt.Println()
+	for _, r := range rs {
+		for _, col := range cols {
+			fmt.Printf("|%v\t", r.fields[col])
+		}
+		fmt.Println()
+	}
+}
+
 func main() {
 	var (
 		isStr  bool
@@ -54,7 +67,7 @@ func main() {
 					fmt.Println(result.message)
 				}
 				if len(result.rows) != 0 {
-					fmt.Println(result.rows)
+					printRows(result.rows, result.cols)
 				}
 			}
 			stsTks = nil

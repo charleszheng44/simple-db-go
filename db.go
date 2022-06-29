@@ -20,6 +20,7 @@ func NewDatabase() *Database {
 
 type Result struct {
 	err     error
+	cols    []string
 	rows    []*Row
 	message string
 }
@@ -127,31 +128,32 @@ func (db *Database) InsertInto(is *InsertStatement) *Result {
 }
 
 func (db *Database) SelectFrom(ss *SelectStatement) *Result {
-	/*
-		db.RLock()
-		defer db.RUnlock()
-		table := db.tables[ss.table]
-		if table == nil {
-			return &Result{
-				err: errors.Errorf("select from non-exist table %s", ss.table),
-			}
+	db.RLock()
+	defer db.RUnlock()
+	table, exist := db.tables[ss.table]
+	if !exist {
+		return &Result{
+			err: errors.Errorf("select from non-exist table %s",
+				ss.table),
 		}
+	}
 
-		var ret []*Row
-
-		if ss.where == nil {
-			for _, r := range table.rows {
-				row := &Row{
-					fields: make(map[string]any),
-				}
-				for _, f := range ss.fields {
-					r.fields[f]
-				}
+	var rs []*Row
+	if ss.where == nil {
+		for _, r := range table.rows {
+			row := &Row{
+				fields: make(map[string]any),
 			}
+			for _, f := range ss.fields {
+				row.fields[f] = r.fields[f]
+			}
+			rs = append(rs, row)
 		}
-	*/
-	panic("NOT IMPLEMENT YET")
-
+	}
+	return &Result{
+		rows: rs,
+		cols: ss.fields,
+	}
 }
 
 func (db *Database) DeleteFrom(ds *DeleteStatement) *Result {

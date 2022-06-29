@@ -214,6 +214,8 @@ func StringToKeyWord(str string) (KeyWord, error) {
 		return Equal, nil
 	case "*":
 		return Star, nil
+	case "values":
+		return Values, nil
 	}
 	return Invalid, errors.New("unknown keywrds")
 }
