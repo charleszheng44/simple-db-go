@@ -35,6 +35,8 @@ type InsertStatement struct {
 
 type DeleteStatement struct {
 	table string
+	keys  []any
+	where *WhereClause
 }
 
 func parseSelectStatement(tokens []*Token) (*SelectStatement, error) {
@@ -57,11 +59,13 @@ func parseSelectStatement(tokens []*Token) (*SelectStatement, error) {
 	}
 	// check the previous token
 	if !isUnquoteStringToken(tokens[i-1]) {
-		return nil, errors.Errorf("FROM must follow a unquote string token")
+		return nil, errors.Errorf("FROM must follow " +
+			"a unquote string token")
 	}
 	i++
 	if !isUnquoteStringToken(tokens[i]) {
-		return nil, errors.Errorf("FROM must be follow by a unquote string token")
+		return nil, errors.Errorf("FROM must be followed " +
+			"by a unquote string token")
 	}
 	table := tokens[i].String()
 	i++
@@ -330,7 +334,7 @@ func getValues(tokens []*Token, i *int) ([]any, error) {
 }
 
 func parseInsertStatement(tokens []*Token) (*InsertStatement, error) {
-	// skip the first token, insert
+	// skip the first token, i.e., INSERT
 	i := 1
 	if i == len(tokens) {
 		return nil, errors.New("incomplete insert statement")
@@ -406,6 +410,85 @@ func parseInsertStatement(tokens []*Token) (*InsertStatement, error) {
 	}, nil
 }
 
+func parseDeleteStatement(tokens []*Token) (*DeleteStatement, error) {
+	// skip the first token, i.e., DELETE
+	i := 1
+	if i == len(tokens) {
+		return nil, errors.New("incomplete delete statement")
+	}
+	if !cmpTks(*tokens[i], TokenFrom) {
+		return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[i], TokenFrom)
+	}
+	i++
+
+	// get the table name
+	if i == len(tokens) {
+		return nil, errors.New("incomplete delete statement")
+	}
+	if tokens[i].Type != UnquoteStringToken {
+		return nil, errors.Errorf("invalid token type: "+
+			"got(%s/'%s'), expect(%s)",
+			tokens[i].Type, tokens[i], UnquoteStringToken)
+	}
+	table := tokens[i].StringVal
+	i++
+
+	// parse the WHERE clause
+	var where *WhereClause
+	if i == len(tokens) {
+		return nil, errors.New("incomplete delete statement")
+	}
+
+	where = &WhereClause{}
+	if !cmpTks(*tokens[i], TokenWhere) {
+		return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[i], TokenWhere)
+	}
+	i++
+
+	if i == len(tokens) {
+		return nil, errors.New("incomplete delete statement")
+	}
+
+	if !isUnquoteStringToken(tokens[i]) {
+		return nil, errors.New("invalid token")
+	}
+	where.field = tokens[i].StringVal
+	i++
+
+	if i == len(tokens) {
+		return nil, errors.New("incomplete delete statement")
+	}
+
+	if !cmpTks(*tokens[i], TokenEqual) {
+		return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+			tokens[i], TokenEqual)
+	}
+	i++
+	if i == len(tokens) {
+		return nil, errors.New("incomplete statement")
+	}
+
+	switch tokens[i].Type {
+	case StringToken:
+		where.value = tokens[i].StringVal
+	case IntegerToken:
+		where.value = tokens[i].IntegerVal
+	case FloatToken:
+		where.value = tokens[i].FloatVal
+	case BoolToken:
+		where.value = tokens[i].BoolVal
+	default:
+		return nil, errors.New("invalid token")
+	}
+
+	return &DeleteStatement{
+		table: table,
+		where: where,
+	}, nil
+}
+
 func parse(tokens []*Token) (any, error) {
 	if len(tokens) == 0 {
 		return nil, errors.New("cannot parse an empty token slice")
@@ -423,7 +506,7 @@ func parse(tokens []*Token) (any, error) {
 	case Insert:
 		return parseInsertStatement(tokens)
 	case Delete:
-		panic("NOT IMPLEMENT YET")
+		return parseDeleteStatement(tokens)
 	default:
 		return nil, errors.Errorf("invalid input format: unsupported keyword %s",
 			tokens[0].KeyWordVal.String())

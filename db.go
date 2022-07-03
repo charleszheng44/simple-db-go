@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -157,5 +158,39 @@ func (db *Database) SelectFrom(ss *SelectStatement) *Result {
 }
 
 func (db *Database) DeleteFrom(ds *DeleteStatement) *Result {
-	panic("NOT IMPLEMENT YET")
+	db.Lock()
+	defer db.Unlock()
+	table, exist := db.tables[ds.table]
+	if !exist {
+		return &Result{
+			err: errors.Errorf("delete from non-exist table %s",
+				ds.table),
+		}
+	}
+
+	// check type
+	given := reflect.TypeOf(ds.where.value).Kind()
+	expect := table.schema[ds.where.field]
+	if given != expect {
+		return &Result{
+			err: errors.Errorf("given value type is invalid: "+
+				"expect(%s) got(%s)", expect, given),
+		}
+	}
+
+	var count int
+	for pk, r := range table.rows {
+		// TODO(charleszheng44): support more operator type
+		if reflect.DeepEqual(
+			r.fields[ds.where.field],
+			ds.where.value) {
+			delete(table.rows, pk)
+		}
+		count++
+	}
+
+	return &Result{
+		message: fmt.Sprintf("%d ROWS DELETED", count),
+	}
+
 }
