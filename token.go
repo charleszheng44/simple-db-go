@@ -86,6 +86,11 @@ var (
 		Type:       KeyWordToken,
 		KeyWordVal: Values,
 	}
+
+	TokenStar = Token{
+		Type:       KeyWordToken,
+		KeyWordVal: Star,
+	}
 )
 
 func isUnquoteStringToken(token *Token) bool {

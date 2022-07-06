@@ -46,26 +46,42 @@ type DropStatement struct {
 func parseSelectStatement(tokens []*Token) (*SelectStatement, error) {
 	// skip the first token, i.e., "SELECT"
 	i := 1
+	if i == len(tokens) {
+		return nil, errors.New("incomplete SELECT statement")
+	}
 	fields := []string{}
-	for ; !cmpTks(*tokens[i], TokenFrom); i++ {
-		if i%2 == 0 {
-			// must be a comma
-			if !cmpTks(*tokens[i], TokenComma) {
-				return nil, errors.New("the desired field must follow a comma")
+	if !cmpTks(*tokens[i], TokenStar) {
+		for ; !cmpTks(*tokens[i], TokenFrom); i++ {
+			if i%2 == 0 {
+				// must be a comma
+				if !cmpTks(*tokens[i], TokenComma) {
+					return nil, errors.New("the desired field must follow a comma")
+				}
+				continue
 			}
-			continue
+			if !isUnquoteStringToken(tokens[i]) {
+				return nil, errors.Errorf("invalid token (%s) before FROM",
+					tokens[i].String())
+			}
+			fields = append(fields, tokens[i].String())
 		}
-		if !isUnquoteStringToken(tokens[i]) {
-			return nil, errors.Errorf("invalid token (%s) before FROM",
-				tokens[i].String())
+		// check the previous token, in case the FROM follows a comma
+		if !isUnquoteStringToken(tokens[i-1]) {
+			return nil, errors.Errorf("FROM must follow " +
+				"a unquote string token")
 		}
-		fields = append(fields, tokens[i].String())
+	} else {
+		// '*' means we will list all fields
+		i++
+		if i == len(tokens) {
+			return nil, errors.New("incomplete SELECT statement")
+		}
+		if !cmpTks(*tokens[i], TokenFrom) {
+			return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+				*tokens[i], TokenFrom)
+		}
 	}
-	// check the previous token
-	if !isUnquoteStringToken(tokens[i-1]) {
-		return nil, errors.Errorf("FROM must follow " +
-			"a unquote string token")
-	}
+
 	i++
 	if !isUnquoteStringToken(tokens[i]) {
 		return nil, errors.Errorf("FROM must be followed " +

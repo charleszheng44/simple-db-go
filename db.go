@@ -139,22 +139,48 @@ func (db *Database) SelectFrom(ss *SelectStatement) *Result {
 		}
 	}
 
-	// TODO (charleszheng44): filter by where clause
 	var rs []*Row
+	var cols []string
+	selectAll := len(cols) == 0
+	if !selectAll && len(cols) == 0 {
+		cols = ss.fields
+	}
+
 	if ss.where == nil {
 		for _, r := range table.rows {
+			if selectAll && len(cols) == 0 {
+				// get all the column name
+				for col := range r.fields {
+					cols = append(cols, col)
+				}
+			}
 			row := &Row{
 				fields: make(map[string]any),
 			}
-			for _, f := range ss.fields {
-				row.fields[f] = r.fields[f]
+			if selectAll {
+				// fetch all fields
+				row.fields = r.fields
+			} else {
+				// only fetch the desired fields
+				cols = ss.fields
+				for _, f := range ss.fields {
+					val, exist := r.fields[f]
+					if !exist {
+						return &Result{
+							err: errors.Errorf("column %s not exist", f),
+						}
+					}
+					row.fields[f] = val
+				}
 			}
 			rs = append(rs, row)
 		}
 	}
+
+	// TODO (charleszheng44): filter by where clause
 	return &Result{
 		rows: rs,
-		cols: ss.fields,
+		cols: cols,
 	}
 }
 
