@@ -6,6 +6,7 @@ import (
 	"os"
 )
 
+// TODO (charleszheng44): dynamic column width
 func printRows(rs []*Row, cols []string) {
 	for _, col := range cols {
 		fmt.Printf("|%s\t", col)

@@ -139,6 +139,7 @@ func (db *Database) SelectFrom(ss *SelectStatement) *Result {
 		}
 	}
 
+	// TODO (charleszheng44): filter by where clause
 	var rs []*Row
 	if ss.where == nil {
 		for _, r := range table.rows {
@@ -185,8 +186,8 @@ func (db *Database) DeleteFrom(ds *DeleteStatement) *Result {
 			r.fields[ds.where.field],
 			ds.where.value) {
 			delete(table.rows, pk)
+			count++
 		}
-		count++
 	}
 
 	return &Result{

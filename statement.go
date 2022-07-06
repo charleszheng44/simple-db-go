@@ -39,8 +39,12 @@ type DeleteStatement struct {
 	where *WhereClause
 }
 
+type DropStatement struct {
+	table string
+}
+
 func parseSelectStatement(tokens []*Token) (*SelectStatement, error) {
-	// skip the first token, i.e., "Select"
+	// skip the first token, i.e., "SELECT"
 	i := 1
 	fields := []string{}
 	for ; !cmpTks(*tokens[i], TokenFrom); i++ {
@@ -489,6 +493,31 @@ func parseDeleteStatement(tokens []*Token) (*DeleteStatement, error) {
 	}, nil
 }
 
+func parseDropStatement(tokens []*Token) (*DropStatement, error) {
+	// skip the first token, i.e., "DROP"
+	i := 1
+	if i == len(tokens) {
+		return nil, errors.New("incomplete statement")
+	}
+	if !cmpTks(*tokens[i], TokenTable) {
+		return nil, errors.Errorf("invalid token: got(%s), expect(%s)",
+			*tokens[i], TokenTable)
+	}
+	i++
+
+	if i == len(tokens) {
+		return nil, errors.New("incomplete statement")
+	}
+	if !isUnquoteStringToken(tokens[i]) {
+		return nil, errors.Errorf("invalid token (%s)",
+			tokens[i].String())
+	}
+	table := tokens[i].StringVal
+	return &DropStatement{
+		table: table,
+	}, nil
+}
+
 func parse(tokens []*Token) (any, error) {
 	if len(tokens) == 0 {
 		return nil, errors.New("cannot parse an empty token slice")
@@ -507,6 +536,8 @@ func parse(tokens []*Token) (any, error) {
 		return parseInsertStatement(tokens)
 	case Delete:
 		return parseDeleteStatement(tokens)
+	case Drop:
+		return parseDropStatement(tokens)
 	default:
 		return nil, errors.Errorf("invalid input format: unsupported keyword %s",
 			tokens[0].KeyWordVal.String())

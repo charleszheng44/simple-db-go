@@ -15,6 +15,7 @@ const (
 	Select
 	Insert
 	Delete
+	Drop
 	Into
 	From
 	Primary
@@ -126,6 +127,8 @@ func (kw KeyWord) String() string {
 		return "insert"
 	case Delete:
 		return "delete"
+	case Drop:
+		return "drop"
 	case Into:
 		return "into"
 	case From:
@@ -165,6 +168,7 @@ var keyWords map[string]empty = map[string]empty{
 	Select.String():       null,
 	Insert.String():       null,
 	Delete.String():       null,
+	Drop.String():         null,
 	Into.String():         null,
 	From.String():         null,
 	Primary.String():      null,
@@ -190,6 +194,8 @@ func StringToKeyWord(str string) (KeyWord, error) {
 		return Insert, nil
 	case "delete":
 		return Delete, nil
+	case "drop":
+		return Drop, nil
 	case "into":
 		return Into, nil
 	case "from":
